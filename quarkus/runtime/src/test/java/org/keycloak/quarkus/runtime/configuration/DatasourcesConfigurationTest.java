@@ -517,4 +517,14 @@ public class DatasourcesConfigurationTest extends AbstractConfigurationTest {
                 , "quarkus.datasource.\"user-store\".password")
                 .forEach(n -> assertThat(propertyNames, not(hasItem(n))));
     }
+
+    @Test
+    public void testRawDatabasePassword() {
+        putEnvVar("KCRAW_DB_PASSWORD", "p@ss$$w0rd${special}");
+        ConfigArgsConfigSource.setCliArgs("--db=postgres");
+        SmallRyeConfig config = createConfig();
+        // The raw password should be preserved exactly as-is, with no expression evaluation
+        assertEquals("p@ss$$w0rd${special}", config.getConfigValue("kc.db-password").getValue());
+        assertEquals("p@ss$$w0rd${special}", config.getConfigValue("quarkus.datasource.password").getValue());
+    }
 }

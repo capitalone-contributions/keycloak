@@ -22,6 +22,7 @@ import java.nio.file.FileSystems;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.ServiceConfigurationError;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -700,5 +701,50 @@ public class ConfigurationTest extends AbstractConfigurationTest {
 
     private static Config.Scope cacheEmbeddedConfiguration() {
         return initConfig(CacheEmbeddedConfigProviderSpi.SPI_NAME, DefaultCacheEmbeddedConfigProviderFactory.PROVIDER_ID);
+    }
+
+    @Test
+    public void testRawEnvVarPreservesDoubleDollar() {
+        putEnvVar("KCRAW_DB_PASSWORD", "my$$password");
+        SmallRyeConfig config = createConfig();
+        assertEquals("my$$password", config.getConfigValue("kc.db-password").getValue());
+    }
+
+    @Test
+    public void testRawEnvVarPreservesExpression() {
+        putEnvVar("KCRAW_DB_PASSWORD", "${vault.secret}");
+        SmallRyeConfig config = createConfig();
+        assertEquals("${vault.secret}", config.getConfigValue("kc.db-password").getValue());
+    }
+
+    @Test
+    public void testRawEnvVarStandalone() {
+        // Only KCRAW_ set, no KC_ counterpart — should still register the property
+        putEnvVar("KCRAW_DB_PASSWORD", "standalone-value");
+        SmallRyeConfig config = createConfig();
+        assertEquals("standalone-value", config.getConfigValue("kc.db-password").getValue());
+    }
+
+    @Test
+    public void testRawAndKcConflictThrowsError() {
+        putEnvVar("KC_DB_PASSWORD", "from-kc");
+        putEnvVar("KCRAW_DB_PASSWORD", "from-kcraw");
+        try {
+            createConfig();
+            Assert.fail("Expected error for conflicting KC_ and KCRAW_ env vars");
+        } catch (ServiceConfigurationError e) {
+            assertNotNull(e.getCause());
+            assertTrue(e.getCause() instanceof IllegalArgumentException);
+            assertTrue(e.getCause().getMessage().contains("KC_DB_PASSWORD"));
+            assertTrue(e.getCause().getMessage().contains("KCRAW_DB_PASSWORD"));
+        }
+    }
+
+    @Test
+    public void testNonRawPropertiesUnaffected() {
+        // Standard KC_ env var with $$ should still be subject to expression evaluation (collapsing $$ to $)
+        putEnvVar("KC_DB_PASSWORD", "has$$dollar");
+        SmallRyeConfig config = createConfig();
+        assertEquals("has$dollar", config.getConfigValue("kc.db-password").getValue());
     }
 }
